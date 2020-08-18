@@ -1,0 +1,8 @@
+./server/node_modules
+./server/node_modules/*
+./server/.idea
+./server/.idea/*
+./client/node_modules
+./client/node_modules/*
+./client/.idea
+./client/.idea/*
