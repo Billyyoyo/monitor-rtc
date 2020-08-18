@@ -6,3 +6,5 @@ client/node_modules
 client/node_modules/*
 client/.idea
 client/.idea/*
+server/files/
+server/files/*
