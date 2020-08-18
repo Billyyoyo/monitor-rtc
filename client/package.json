@@ -1,0 +1,29 @@
+{
+  "name": "mediasoup-client",
+  "version": "1.0.0",
+  "description": "",
+  "main": "main.js",
+  "scripts": {
+    "build": "npx rollup -c",
+    "start": "electron .",
+    "package": "electron-packager . Client -all --out ./output --app-version 1.0.0 --overwrite --icon=./icon-128x128.png"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "axios": "^0.19.0",
+    "debug": "^4.1.1",
+    "deep-equal": "^1.0.1",
+    "electron": "^9.1.2",
+    "google-protobuf": "^3.12.4",
+    "mediasoup-client": "^3.1.6"
+  },
+  "devDependencies": {
+    "rollup": "^1.12.4",
+    "rollup-plugin-commonjs": "^10.0.0",
+    "rollup-plugin-json": "^4.0.0",
+    "rollup-plugin-node-builtins": "^2.1.2",
+    "rollup-plugin-node-resolve": "^5.0.0"
+  }
+}

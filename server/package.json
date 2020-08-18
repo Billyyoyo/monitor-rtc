@@ -1,0 +1,17 @@
+{
+  "name": "webrtc-ffmpeg-server",
+  "version": "0.1.0",
+  "description": "Mediasoup is main framework",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "author": "Billyyoyo",
+  "license": "ISC",
+  "dependencies": {
+    "deep-equal": "^1.0.1",
+    "express": "^4.16.4",
+    "mediasoup": "^3.1.5"
+  },
+  "devDependencies": {}
+}
