@@ -1,4 +1,5 @@
 const {app, BrowserWindow} = require('electron')
+const path = require('path')
 
 let mainWindow
 
@@ -12,11 +13,11 @@ function createWindow() {
         minHeight: 500,
         frame: true,
         webPreferences: {
-            // preload: path.join(__dirname, 'preload.js'),
-            allowRunningInsecureContent:true,
+            preload: path.join(__dirname, 'preload.js'),
+            allowRunningInsecureContent: true,
             nodeIntegration: true,
             webSecurity: false,
-            plugins:true
+            plugins: true
         }
     })
     // mainWindow.addExtension('/home/billyyoyo/workspace/mediasoup-client/extentions/ajhifddimkapgcifgcodmmfdlknahffk/3.7_0')
@@ -27,6 +28,7 @@ function createWindow() {
     mainWindow.setMenu(null)
 
 }
+
 app.on('ready', function () {
     createWindow()
 })

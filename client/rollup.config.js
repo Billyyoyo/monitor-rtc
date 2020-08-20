@@ -5,9 +5,9 @@ import json from 'rollup-plugin-json';
 
 export default [
   {
-    input: 'pages/client.js',
+    input: 'src/client.js',
     output: [{
-      file: 'pages/client-bundle.js',
+      file: 'pages/rtc_cli.js',
       name: 'Client',
       format: 'iife',
       sourcemap: 'inline'
