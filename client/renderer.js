@@ -13,10 +13,10 @@ export async function getScreenMedias() {
                             mandatory: {
                                 chromeMediaSource: 'desktop',
                                 chromeMediaSourceId: source.id,
-                                minWidth: 1280,
-                                maxWidth: 1280,
-                                minHeight: 720,
-                                maxHeight: 720
+                                minWidth: 1920,
+                                maxWidth: 1920,
+                                minHeight: 1080,
+                                maxHeight: 1080,
                             }
                         }
                     })
@@ -28,3 +28,28 @@ export async function getScreenMedias() {
     })
     return stream
 }
+//                                maxFrameRate: 5.0
+export async function getCameraMedias() {
+    let stream
+    console.log('start camera');
+    try {
+        stream = await navigator.mediaDevices.getUserMedia({
+            video: true,
+            audio: true
+        });
+    } catch (e) {
+        console.error('start camera error', e);
+    }
+    return stream
+}
+
+// video: {
+//     width: 640,
+//         height: 360,
+//         maxBitrate: 600,
+//         minBitrate: 400,
+// },
+// audio: {
+//     sampleRate: 16000,
+//         channelCount: 1
+// }

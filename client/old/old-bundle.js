@@ -13521,6 +13521,9 @@ var Client = (function (exports) {
 	// how do we limit bandwidth for screen share streams?
 	//
 	function screenshareEncodings() {
+        return [
+            {maxBitrate: 960000, scaleResolutionDownBy: 1},
+        ];
 	}
 
 	//
@@ -13533,12 +13536,12 @@ var Client = (function (exports) {
 	            body = JSON.stringify({...data, peerId: myPeerId});
 
 	        if (beacon) {
-	            navigator.sendBeacon('http://10.8.240.133:3000/signaling/' + endpoint, body);
+	            navigator.sendBeacon(window.rtc_url +'/signaling/' + endpoint, body);
 	            return null;
 	        }
 
 	        let response = await fetch(
-	            'https://10.8.240.133:3000/signaling/' + endpoint, {method: 'POST', body, headers}
+	            window.rtc_url +'/signaling/' + endpoint, {method: 'POST', body, headers}
 	        );
 	        return await response.json();
 	    } catch (e) {

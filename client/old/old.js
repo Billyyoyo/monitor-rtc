@@ -1,7 +1,7 @@
 // import * as config from './config';
 import * as mediasoup from 'mediasoup-client';
 import deepEqual from 'deep-equal';
-import {getScreenMedias} from '../renderer'
+import {getScreenMedias} from '../renderer-record'
 
 const $ = document.querySelector.bind(document);
 const $$ = document.querySelectorAll.bind(document);

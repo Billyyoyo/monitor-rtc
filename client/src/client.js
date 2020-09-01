@@ -1,7 +1,7 @@
 // import * as config from './config';
 import * as mediasoup from 'mediasoup-client';
 import deepEqual from 'deep-equal';
-import {getScreenMedias} from '../renderer'
+import {getScreenMedias} from '../renderer-record'
 
 //
 // export all the references we use internally to manage call state,
@@ -9,7 +9,8 @@ import {getScreenMedias} from '../renderer'
 //
 //   `Client.camVideoProducer.paused`
 // 随机生成一个peerid
-export const myPeerId = uuidv4();
+export let myPeerId;
+export let myRoomId;
 // 全局变量
 export let device,
     joined,
@@ -59,16 +60,23 @@ export async function main() {
 // meeting control actions
 //
 // 加入房间
-export async function joinRoom() {
+export async function joinRoom(peerId, roomId, userName, roomName, isAdmin) {
     if (joined) {
         return;
     }
+    myPeerId = peerId;
+    myRoomId = roomId;
     console.log('join room');
     try {
         // signal that we're a new peer and initialize our
         // mediasoup-client device, if this is our first time connecting
         // 调用加入指令，获取rtc支持的能力
-        let {routerRtpCapabilities} = await sig('join-as-new-peer');
+        let {routerRtpCapabilities} = await sig('join-as-new-peer', {
+            roomId: myRoomId,
+            userName: userName,
+            roomName: roomName,
+            isAdmin: isAdmin
+        });
         // 用服务端支持的能力加载设备对象
         if (!device.loaded) {
             await device.load({routerRtpCapabilities});
@@ -644,7 +652,7 @@ function findConsumerForTrack(peerId, mediaTag) {
 
 // just two resolutions, for now, as chrome 75 seems to ignore more
 // than two encodings
-//
+// todo 
 const CAM_VIDEO_SIMULCAST_ENCODINGS =
     [
         {maxBitrate: 96000, scaleResolutionDownBy: 4},
@@ -671,12 +679,12 @@ async function sig(endpoint, data, beacon) {
             body = JSON.stringify({...data, peerId: myPeerId});
 
         if (beacon) {
-            navigator.sendBeacon('http://10.8.240.133:3000/signaling/' + endpoint, body);
+            navigator.sendBeacon(window.rtc_url +'/signaling/' + endpoint, body);
             return null;
         }
 
         let response = await fetch(
-            'https://10.8.240.133:3000/signaling/' + endpoint, {method: 'POST', body, headers}
+            window.rtc_url +'/signaling/' + endpoint, {method: 'POST', body, headers}
         );
         return await response.json();
     } catch (e) {
@@ -685,14 +693,6 @@ async function sig(endpoint, data, beacon) {
     }
 }
 
-//
-// simple uuid helper function
-//
-
-function uuidv4() {
-    return ('111-111-1111').replace(/[018]/g, () =>
-        (crypto.getRandomValues(new Uint8Array(1))[0] & 15).toString(16));
-}
 
 //
 // promisified sleep

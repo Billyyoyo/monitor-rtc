@@ -23,6 +23,7 @@ function createWindow() {
     // mainWindow.addExtension('/home/billyyoyo/workspace/mediasoup-client/extentions/ajhifddimkapgcifgcodmmfdlknahffk/3.7_0')
     //mainWindow.loadURL('https://192.168.1.113:3000/')
     // mainWindow.loadURL('https://secure.flyee.cc/aliplay.html')
+    // mainWindow.loadFile(`old/old.html`, {})
     mainWindow.loadFile(`pages/index.html`, {})
     mainWindow.webContents.openDevTools()
     mainWindow.setMenu(null)

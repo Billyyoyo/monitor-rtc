@@ -5,7 +5,7 @@ import json from 'rollup-plugin-json';
 
 export default [
   {
-    input: 'src/client.js',
+    input: 'src/app.js',
     output: [{
       file: 'pages/rtc_cli.js',
       name: 'Client',
