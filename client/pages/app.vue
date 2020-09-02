@@ -2,9 +2,11 @@
     <div class="hello">
         <div>
             <div v-if="showJoin">User Id:<input type="text" v-model="userId" style="width: 300px;"></div>
+            <br>
             <div><input type="text" v-model="msg" style="width: 90%;">
                 <button @click="sendMsg">Send</button>
             </div>
+            <br>
             <video ref="screenVideoView" playsinline width="320" height="180"></video>
             <video ref="cameraVideoView" playsinline width="320" height="180"></video>
             <audio ref="audioView" playsinline autoplay></audio>
@@ -23,7 +25,7 @@
             return {
                 showJoin: true,
                 userId: '1',
-                msg: ''
+                msg: '',
             }
         },
         mounted() {
@@ -38,11 +40,19 @@
                 onMediaReady: this.onMediaReady,
                 onStreamComming: this.onStreamComming
             })
+            voiceKeyListener.onPress = this.onVoiceKeyPress
+            voiceKeyListener.onRelease = this.onVoiceKeyRelease
         },
         methods: {
             sendMsg() {
                 Client.sendTextMessage(this.msg)
                 this.msg = ''
+            },
+            onVoiceKeyPress(){
+                Client.resumeVoiceProduce()
+            },
+            onVoiceKeyRelease(){
+                Client.pauseVoiceProduce()
             },
             showTip(d) {
                 console.log(d)

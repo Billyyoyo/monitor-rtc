@@ -168,7 +168,11 @@ async function startCamera() {
         track: cameraStream.getAudioTracks()[0],
         appData: {mediaTag: 'cam-audio'}
     });
-
+    try {
+        context.voiceProducer.pause();
+    } catch (e) {
+        console.error(e);
+    }
     // todo 启动了摄像头上传流
 }
 
@@ -200,6 +204,14 @@ async function startScreen() {
         // todo 当关闭屏幕共享
     }
     // todo 启动了屏幕上传流
+}
+
+export async function pauseVoiceProduce() {
+    await pauseProducer(context.voiceProducer)
+}
+
+export async function resumeVoiceProduce() {
+    await resumeProducer(context.voiceProducer)
 }
 
 // 订阅某个端   比如房间中其他人
@@ -329,7 +341,7 @@ async function createTransport(direction) {
 }
 
 // 暂停生产通道
-export async function pauseProducer(producer) {
+async function pauseProducer(producer) {
     if (producer) {
         console.log('pause producer', producer.appData.mediaTag);
         try {
@@ -342,7 +354,7 @@ export async function pauseProducer(producer) {
 }
 
 // 唤醒生产通道
-export async function resumeProducer(producer) {
+async function resumeProducer(producer) {
     if (producer) {
         console.log('resume producer', producer.appData.mediaTag);
         try {

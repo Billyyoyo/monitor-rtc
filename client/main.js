@@ -1,4 +1,4 @@
-const {app, BrowserWindow} = require('electron')
+const {app, BrowserWindow, globalShortcut, ipcMain} = require('electron')
 const path = require('path')
 
 let mainWindow
@@ -20,21 +20,16 @@ function createWindow() {
             plugins: true
         }
     })
-    // mainWindow.addExtension('/home/billyyoyo/workspace/mediasoup-client/extentions/ajhifddimkapgcifgcodmmfdlknahffk/3.7_0')
-    //mainWindow.loadURL('https://192.168.1.113:3000/')
     // mainWindow.loadURL('https://secure.flyee.cc/aliplay.html')
     // mainWindow.loadFile(`old/old.html`, {})
     mainWindow.loadFile(`pages/index.html`, {})
     mainWindow.webContents.openDevTools()
     mainWindow.setMenu(null)
-
 }
 
 app.on('ready', function () {
     createWindow()
 })
-
-// mainWindow.loadURL('http://localhost/')
 
 app.on('window-all-closed', function () {
     if (process.platform !== 'darwin') app.quit()
@@ -42,4 +37,43 @@ app.on('window-all-closed', function () {
 
 app.on('activate', function () {
     if (mainWindow === null) createWindow()
+})
+
+let f2Original, f2Ticket = 0
+let f2Interval
+
+app.whenReady().then(() => {
+    const ret = globalShortcut.register('F2', () => {
+        let curr = new Date().getTime()
+        if (f2Ticket === 0) {
+            f2Original = curr
+            onVoicePress(true)
+            f2Interval = setInterval(() => {
+                let now = new Date().getTime()
+
+                if (now - f2Original > 600 && now - f2Ticket > 100) {
+                    f2Ticket = 0
+                    f2Original = 0
+                    onVoicePress(false)
+                    clearInterval(f2Interval)
+                }
+            }, 100)
+        }
+        f2Ticket = curr
+    })
+    if (!ret) {
+        console.log('registration failed')
+    }
+    console.log(globalShortcut.isRegistered('F2'))
+})
+
+function onVoicePress(press) {
+    if (mainWindow) {
+        mainWindow.webContents.send('onVoiceKeyPress', press)
+    }
+}
+
+app.on('will-quit', () => {
+    globalShortcut.unregister('F2')
+    globalShortcut.unregisterAll()
 })
