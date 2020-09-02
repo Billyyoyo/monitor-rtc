@@ -9,7 +9,7 @@ const Logic = require('./logic')
 const Action = require('./constants')
 
 // logic服务模块
-const logic = new Logic()
+let logic
 
 // http服务
 let expressApp = express()
@@ -19,15 +19,13 @@ const log = debugModule('demo-app')
 const warn = debugModule('demo-app:WARN')
 const err = debugModule('demo-app:ERROR')
 
-let worker, router
-
 // http静态资源目录
 expressApp.use(express.static(__dirname))
 
 async function main() {
     // start mediasoup
     log('starting mediasoup')
-    ({worker, router} = await startMediasoup())
+    logic = await startMediasoup()
 
     // start https server, falling back to http if https fails
     log('starting express')
@@ -72,6 +70,7 @@ main()
 // 启动mediasoup服务 仅一个工作进程
 //
 async function startMediasoup() {
+    logic = new Logic()
     // 工作进程的端口号范围40000-49999
     let worker = await mediasoup.createWorker({
         logLevel: config.mediasoup.worker.logLevel,
@@ -94,7 +93,7 @@ async function startMediasoup() {
 
     logic.setRouter(router)
 
-    return {worker, router}
+    return logic
 }
 
 //
@@ -118,7 +117,7 @@ function dispatchWsMsg(ws, peerId, msg) {
 
 // --> /signaling/fetch-capabilities
 // 客户端启动后首先获取通讯和音视频描述
-expressApp.post('/signaling/fetch-capabilities', async (req, res)=>{
+expressApp.post('/signaling/fetch-capabilities', async (req, res) => {
     let capabilities = await logic.handleFetchCapabilities()
     res.send(capabilities)
 })

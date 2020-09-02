@@ -45,7 +45,6 @@ const USERS = [
 module.exports = class Logic {
     constructor() {
         this.peers = {} // 所有客户端
-        this.activeSpeaker = {producerId: null, volume: null, peerId: null} // 当前正在说话的客户端
         this.transports = {} // 所有传输通道
         this.producers = [] // 分享视频或音频流的生产者
         this.consumers = []   // 订阅流的消费端
@@ -56,18 +55,6 @@ module.exports = class Logic {
 
     setRouter(router) {
         this.router = router
-    }
-
-    onAudioVolumnChanged(producer, volume) {
-        this.activeSpeaker.producerId = producer.id;
-        this.activeSpeaker.volume = volume;
-        this.activeSpeaker.peerId = producer.appData.peerId;
-    }
-
-    onAudioSilence() {
-        this.activeSpeaker.producerId = null;
-        this.activeSpeaker.volume = null;
-        this.activeSpeaker.peerId = null;
     }
 
     onConnected(ws, userId, peerId) {

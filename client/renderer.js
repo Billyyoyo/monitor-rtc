@@ -17,6 +17,7 @@ export async function getScreenMedias() {
                                 maxWidth: 1920,
                                 minHeight: 1080,
                                 maxHeight: 1080,
+                                maxFrameRate: 8.0
                             }
                         }
                     })
@@ -28,14 +29,22 @@ export async function getScreenMedias() {
     })
     return stream
 }
+
 //                                maxFrameRate: 5.0
 export async function getCameraMedias() {
     let stream
     console.log('start camera');
     try {
         stream = await navigator.mediaDevices.getUserMedia({
-            video: true,
-            audio: true
+            video: {
+                width: 640,
+                height: 360,
+                frameRate: 15
+            },
+            audio: {
+                noiseSuppression: true,
+                echoCancellation:true
+            }
         });
     } catch (e) {
         console.error('start camera error', e);
