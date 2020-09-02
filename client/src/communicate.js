@@ -13,8 +13,7 @@ const Action = {
 let self
 
 export class Communicator {
-    constructor({userId, onConnected, onErrorOrClose, onJoin, onLeave, onMessage, onSuccess, onReady}) {
-        this.userId = userId
+    constructor({onConnected, onErrorOrClose, onJoin, onLeave, onMessage, onSuccess, onReady}) {
         this.peerId = ''
         this.connected = false
         this.lastHeartBeatTs = 0
@@ -55,7 +54,8 @@ export class Communicator {
         const action = JSON.parse(ev.data)
         if (action.act === Action.CONNECTED) {
             self.connected = true
-            self._loop().then(r => {})
+            self._loop().then(r => {
+            })
             self.onConnected(action.data)
             self.lastHeartBeatTs = new Date().getTime()
         } else if (action.act === Action.HEARTBEAT) {
@@ -141,5 +141,10 @@ export class Communicator {
         this.lastHeartBeatTs = 0
         this.looper = null
         this.connect()
+    }
+
+    setUserInfo(userId, roomId) {
+        this.userId = userId
+        this.roomId = roomId
     }
 }

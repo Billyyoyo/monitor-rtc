@@ -41,9 +41,9 @@ export let context = {
 }
 
 // 页面加载完成后初始化函数
-export async function main(userId, cbs) {
+export async function main(roomId, userId, cbs) {
     callbacks = cbs
-    console.log(`starting up ... my userId is ${userId}`)
+    console.log(`starting up ... my userId is ${userId} in ${roomId}`)
     try {
         // 检查浏览器是否支持视频通话
         device = new mediasoup.Device()
@@ -59,10 +59,7 @@ export async function main(userId, cbs) {
         }
     }
     // 初始化通讯
-    cli = new Communicator({
-        userId,
-        onConnected, onErrorOrClose, onJoin, onLeave, onMessage, onSuccess, onReady
-    })
+    cli.setUserInfo(userId, roomId)
     init().then(e => {
     })
     // 当关闭页面的时候调用离开房间指令
@@ -77,6 +74,15 @@ async function init() {
         await device.load({routerRtpCapabilities})
     }
     cli.connect()
+}
+
+export async function getUserInfo(siteNo) {
+    let result = await cli.post('user-info', {siteNo: siteNo})
+    if (result.error) {
+        throw result.error
+    } else {
+        return result
+    }
 }
 
 async function onConnected({members}) {
@@ -431,3 +437,5 @@ async function release() {
     screenStream = null
     context.consumers = [];
 }
+
+cli = new Communicator({onConnected, onErrorOrClose, onJoin, onLeave, onMessage, onSuccess, onReady})

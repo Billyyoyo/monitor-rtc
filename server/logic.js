@@ -4,43 +4,11 @@ const debugModule = require('debug');
 const FFmpeg = require('./ffmpeg')
 const {getClientAddress} = require('./utils');
 const Action = require('./constants')
+const {getUserById} = require('./dao')
 
-const log = debugModule('demo-app');
-const warn = debugModule('demo-app:WARN');
-const err = debugModule('demo-app:ERROR');
-
-const USERS = [
-    {
-        id: '1',
-        name: 'tester_1',
-        roomId: '1',
-        isAdmin: 0
-    },
-    {
-        id: '2',
-        name: 'tester_2',
-        roomId: '1',
-        isAdmin: 0
-    },
-    {
-        id: '3',
-        name: 'admin_3',
-        roomId: '1',
-        isAdmin: 1
-    },
-    {
-        id: '4',
-        name: 'tester_4',
-        roomId: '2',
-        isAdmin: 0
-    },
-    {
-        id: '5',
-        name: 'admin_5',
-        roomId: '2',
-        isAdmin: 1
-    }
-]
+const log = debugModule('App');
+const warn = debugModule('App:WARN');
+const err = debugModule('App:ERROR');
 
 module.exports = class Logic {
     constructor() {
@@ -59,7 +27,7 @@ module.exports = class Logic {
 
     onConnected(ws, userId, peerId) {
         // todo 根据peerId获取用户信息，需要重构为db方式
-        let user = USERS.find(u => u.id === userId);
+        let user = getUserById(userId);
         if (!user) {
             ws.close();
             return;

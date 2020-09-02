@@ -7,6 +7,7 @@ const https = require('https')
 const fs = require('fs')
 const Logic = require('./logic')
 const Action = require('./constants')
+const {getUserBySiteNo} = require('./dao')
 
 // logic服务模块
 let logic
@@ -15,9 +16,9 @@ let logic
 let expressApp = express()
 let httpsServer
 
-const log = debugModule('demo-app')
-const warn = debugModule('demo-app:WARN')
-const err = debugModule('demo-app:ERROR')
+const log = debugModule('App')
+const warn = debugModule('App:WARN')
+const err = debugModule('App:ERROR')
 
 // http静态资源目录
 expressApp.use(express.static(__dirname))
@@ -114,6 +115,22 @@ function dispatchWsMsg(ws, peerId, msg) {
         logic.handleMessage(ws, peerId, obj.data)
     }
 }
+
+// --> /signaling/user-info
+// 根据用户座位号返回用户信息
+expressApp.post('/signaling/user-info', async (req, res) => {
+    let {siteNo} = req.body
+    if (siteNo) {
+        let user = await getUserBySiteNo(siteNo)
+        if (user && user.id) {
+            res.send(user)
+        } else {
+            res.send({error: 'no user'})
+        }
+    } else {
+        res.send({error: 'no user'})
+    }
+})
 
 // --> /signaling/fetch-capabilities
 // 客户端启动后首先获取通讯和音视频描述

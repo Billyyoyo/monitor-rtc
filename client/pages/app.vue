@@ -1,15 +1,19 @@
 <template>
     <div class="hello">
         <div>
-            <div v-if="showJoin">User Id:<input type="text" v-model="userId" style="width: 300px;"></div>
-            <br>
-            <div><input type="text" v-model="msg" style="width: 90%;">
-                <button @click="sendMsg">Send</button>
+            <div v-if="!user">Site No:<input type="text" v-model="siteNo" style="width: 100px;">
+                <button @click="login">Login</button>
             </div>
-            <br>
-            <video ref="screenVideoView" playsinline width="320" height="180"></video>
-            <video ref="cameraVideoView" playsinline width="320" height="180"></video>
-            <audio ref="audioView" playsinline autoplay></audio>
+            <div v-if="user">
+                <br>
+                <div><input type="text" v-model="msg" style="width: 90%;">
+                    <button @click="sendMsg">Send</button>
+                </div>
+                <br>
+                <video ref="screenVideoView" playsinline width="320" height="180"></video>
+                <video ref="cameraVideoView" playsinline width="320" height="180"></video>
+                <audio ref="audioView" playsinline autoplay></audio>
+            </div>
         </div>
 
     </div>
@@ -24,34 +28,48 @@
         data: function () {
             return {
                 showJoin: true,
-                userId: '1',
+                siteNo: '1',
                 msg: '',
+                user: null
             }
         },
         mounted() {
-            Client.main(this.userId, {
-                showTip: this.showTip,
-                showError: this.showError,
-                needReconnect: this.needReconnect,
-                memberJoin: this.memberJoin,
-                memberLeave: this.memberLeave,
-                recvMessage: this.recvMessage,
-                onSendSuccess: this.onSendSuccess,
-                onMediaReady: this.onMediaReady,
-                onStreamComming: this.onStreamComming
-            })
-            voiceKeyListener.onPress = this.onVoiceKeyPress
-            voiceKeyListener.onRelease = this.onVoiceKeyRelease
+
         },
         methods: {
+            login() {
+                Client.getUserInfo(this.siteNo)
+                    .then(result => {
+                        this.user = result
+                        this.join()
+                    })
+                    .catch(error => {
+                        console.error(error)
+                    })
+            },
+            join() {
+                Client.main(this.user.roomId, this.user.id, {
+                    showTip: this.showTip,
+                    showError: this.showError,
+                    needReconnect: this.needReconnect,
+                    memberJoin: this.memberJoin,
+                    memberLeave: this.memberLeave,
+                    recvMessage: this.recvMessage,
+                    onSendSuccess: this.onSendSuccess,
+                    onMediaReady: this.onMediaReady,
+                    onStreamComming: this.onStreamComming
+                })
+                voiceKeyListener.onPress = this.onVoiceKeyPress
+                voiceKeyListener.onRelease = this.onVoiceKeyRelease
+            },
             sendMsg() {
                 Client.sendTextMessage(this.msg)
                 this.msg = ''
             },
-            onVoiceKeyPress(){
+            onVoiceKeyPress() {
                 Client.resumeVoiceProduce()
             },
-            onVoiceKeyRelease(){
+            onVoiceKeyRelease() {
                 Client.pauseVoiceProduce()
             },
             showTip(d) {
