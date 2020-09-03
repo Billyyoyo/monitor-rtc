@@ -27,7 +27,6 @@
         },
         data: function () {
             return {
-                showJoin: true,
                 siteNo: '1',
                 msg: '',
                 user: null
@@ -79,6 +78,7 @@
                 console.log(d)
             },
             needReconnect(d, fn) {
+                this.user = null
                 console.log(d)
             },
             memberJoin(d) {

@@ -2,15 +2,19 @@ const config = require('./config')
 const debugModule = require('debug')
 const mediasoup = require('mediasoup')
 const express = require('express')
-var expressWs = require('express-ws')
+const expressWs = require('express-ws')
 const https = require('https')
 const fs = require('fs')
+const os = require('os')
 const Logic = require('./logic')
 const Action = require('./constants')
-const {getUserBySiteNo} = require('./dao')
+const {getUserBySiteNo, getUserById, getRooms} = require('./dao')
+
+// 多cpu核心负载均衡工作单元
+let workers = []
 
 // logic服务模块
-let logic
+let logics = []
 
 // http服务
 let expressApp = express()
@@ -23,10 +27,68 @@ const err = debugModule('App:ERROR')
 // http静态资源目录
 expressApp.use(express.static(__dirname))
 
+function getPreferenceWorker() {
+    let min = null
+    workers.forEach(worker => {
+        if (min) {
+            if (min.appData.balance > worker.appData.balance) {
+                min = worker
+            }
+        } else {
+            min = worker
+        }
+    })
+    return min
+}
+
+function getRoomByPeerId(peerId) {
+    const l = logics.find(l => l.checkExist(peerId))
+    return l
+}
+
+async function initWorkers() {
+    // 工作进程的端口号范围40000-49999
+    const coreCount = os.cpus().length
+    let ports = parseInt((config.mediasoup.worker.rtcMaxPort - config.mediasoup.worker.rtcMinPort) / coreCount)
+    let portStart = config.mediasoup.worker.rtcMinPort
+    for (let i = 0; i < coreCount; i++) {
+        let worker = await mediasoup.createWorker({
+            logLevel: config.mediasoup.worker.logLevel,
+            logTags: config.mediasoup.worker.logTags,
+            rtcMinPort: portStart + ports * i,
+            rtcMaxPort: portStart + ports * (i + 1) - 1,
+        })
+        worker.appData.balance = 0
+        // 工作进程结束将结束主进程
+        worker.on('died', () => {
+            err('mediasoup worker died (this should never happen)')
+            process.exit(1)
+        })
+        workers.push(worker)
+    }
+}
+
+async function createRooms() {
+    let list = await getRooms()
+    for (const i in list) {
+        const room = list[i]
+        let worker = getPreferenceWorker()
+        // 所有支持的编解码格式
+        const mediaCodecs = config.mediasoup.router.mediaCodecs
+        // SFU创建路由
+        const router = await worker.createRouter({mediaCodecs})
+        worker.appData.balance++
+        let logic = new Logic(room.id, router)
+        logics.push(logic)
+        log('create room: ' + room.id + ' name:' + room.name + ' in worker: ' + worker.pid + ' balance: ' + worker.appData.balance)
+    }
+}
+
 async function main() {
     // start mediasoup
-    log('starting mediasoup')
-    logic = await startMediasoup()
+    log('starting rtc workers')
+    await initWorkers()
+    await createRooms()
 
     // start https server, falling back to http if https fails
     log('starting express')
@@ -39,12 +101,19 @@ async function main() {
         let wsServer = expressWs(expressApp, httpsServer).app
         wsServer.ws('/sock/:userId/:peerId', function (ws, req) {
             ws.on('message', function (msg) {
-                dispatchWsMsg(ws, req.params.peerId, msg)
+                dispatchWsMsg(ws, ws.peerId, msg)
             })
             ws.on('close', function (ev) {
-                logic.onDisconnected(ws, req.params.peerId)
+                getRoomByPeerId(ws.peerId).onDisconnected(ws, ws.peerId)
             })
-            logic.onConnected(ws, req.params.userId, req.params.peerId)
+            ws.peerId = req.params.peerId
+            let user = getUserById(req.params.userId)
+            let logic = logics.find(l => l.roomId === user.roomId)
+            if (logic) {
+                logic.onConnected(ws, req.params.userId, req.params.peerId)
+            } else {
+                ws.close()
+            }
         })
         httpsServer.on('error', (e) => {
             err('https server error,', e.message)
@@ -66,55 +135,32 @@ async function main() {
 
 main()
 
-
-//
-// 启动mediasoup服务 仅一个工作进程
-//
-async function startMediasoup() {
-    logic = new Logic()
-    // 工作进程的端口号范围40000-49999
-    let worker = await mediasoup.createWorker({
-        logLevel: config.mediasoup.worker.logLevel,
-        logTags: config.mediasoup.worker.logTags,
-        rtcMinPort: config.mediasoup.worker.rtcMinPort,
-        rtcMaxPort: config.mediasoup.worker.rtcMaxPort,
-    })
-
-    // 工作进程结束将结束主进程
-    worker.on('died', () => {
-        err('mediasoup worker died (this should never happen)')
-        process.exit(1)
-    })
-
-    // 所有支持的编解码格式
-    const mediaCodecs = config.mediasoup.router.mediaCodecs
-
-    // SFU创建路由
-    const router = await worker.createRouter({mediaCodecs})
-
-    logic.setRouter(router)
-
-    return logic
-}
-
-//
-// -- our minimal signaling is just http polling --
-//
-
-// parse every request body for json, no matter the content-type. this
-// lets us use sendBeacon or fetch interchangeably to POST to
-// signaling endpoints. (sendBeacon can't set the Content-Type header)
-//
 expressApp.use(express.json({type: '*/*'}))
 
 function dispatchWsMsg(ws, peerId, msg) {
     const obj = JSON.parse(msg)
     if (obj.act === Action.HEARTBEAT) { // 心跳检测
-        logic.onHeartBeat(ws, peerId)
+        getRoomByPeerId(peerId).onHeartBeat(ws, peerId)
     } else if (obj.act === Action.MESSAGE) {
-        logic.handleMessage(ws, peerId, obj.data)
+        getRoomByPeerId(peerId).handleMessage(ws, peerId, obj.data)
     }
 }
+
+// --> /signaling/create-rooms
+// 创建所有房间
+expressApp.post('/signaling/create-rooms', async (req, res) => {
+    // 释放每个房间
+    logics.forEach((l) => {
+        l.release()
+    })
+    logics.splice(0, logics.length)
+    workers.forEach(w => {
+        w.appData.balance = 0
+    })
+    // todo 从项目服务器调用接口  加载项目数据作为房间  目前直接从db中加载
+    await createRooms()
+    res.send({ret: 0})
+})
 
 // --> /signaling/user-info
 // 根据用户座位号返回用户信息
@@ -135,7 +181,8 @@ expressApp.post('/signaling/user-info', async (req, res) => {
 // --> /signaling/fetch-capabilities
 // 客户端启动后首先获取通讯和音视频描述
 expressApp.post('/signaling/fetch-capabilities', async (req, res) => {
-    let capabilities = await logic.handleFetchCapabilities()
+    const index = Math.round(Math.random() * logics.length)
+    let capabilities = await logics[index].handleFetchCapabilities()
     res.send(capabilities)
 })
 
@@ -143,7 +190,8 @@ expressApp.post('/signaling/fetch-capabilities', async (req, res) => {
 // 客户端请求创建一个rtc传输连接  direction标识是上行还是下行
 expressApp.post('/signaling/create-transport', async (req, res) => {
     let {peerId, direction} = req.body
-    if (!logic.checkExist(peerId)) {
+    let logic = getRoomByPeerId(peerId)
+    if (!logic) {
         res.send({error: 'offline'})
         return
     }
@@ -155,7 +203,8 @@ expressApp.post('/signaling/create-transport', async (req, res) => {
 // 创建后自然要连接传输组件
 expressApp.post('/signaling/connect-transport', async (req, res) => {
     let {peerId, transportId, dtlsParameters} = req.body
-    if (!logic.checkExist(peerId)) {
+    let logic = getRoomByPeerId(peerId)
+    if (!logic) {
         res.send({error: 'offline'})
         return
     }
@@ -167,7 +216,8 @@ expressApp.post('/signaling/connect-transport', async (req, res) => {
 // 关闭传输
 expressApp.post('/signaling/close-transport', async (req, res) => {
     let {peerId, transportId} = req.body
-    if (!logic.checkExist(peerId)) {
+    let logic = getRoomByPeerId(peerId)
+    if (!logic) {
         res.send({error: 'offline'})
         return
     }
@@ -179,7 +229,8 @@ expressApp.post('/signaling/close-transport', async (req, res) => {
 // 关闭生产者
 expressApp.post('/signaling/close-producer', async (req, res) => {
     let {peerId, producerId} = req.body
-    if (!logic.checkExist(peerId)) {
+    let logic = getRoomByPeerId(peerId)
+    if (!logic) {
         res.send({error: 'offline'})
         return
     }
@@ -192,7 +243,8 @@ expressApp.post('/signaling/close-producer', async (req, res) => {
 expressApp.post('/signaling/send-track', async (req, res) => {
     // 取出req中的传输信息
     let {peerId, transportId, kind, rtpParameters, paused = false, appData} = req.body
-    if (!logic.checkExist(peerId)) {
+    let logic = getRoomByPeerId(peerId)
+    if (!logic) {
         res.send({error: 'offline'})
         return
     }
@@ -205,7 +257,8 @@ expressApp.post('/signaling/send-track', async (req, res) => {
 expressApp.post('/signaling/recv-track', async (req, res) => {
     // 获取请求者的rtc和媒体信息  mediapeerid是 订阅某个生产者的连接id
     let {peerId, mediaPeerId, mediaTag, rtpCapabilities} = req.body
-    if (!logic.checkExist(peerId)) {
+    let logic = getRoomByPeerId(peerId)
+    if (!logic) {
         res.send({error: 'offline'})
         return
     }
@@ -217,7 +270,8 @@ expressApp.post('/signaling/recv-track', async (req, res) => {
 // 暂停消费
 expressApp.post('/signaling/pause-consumer', async (req, res) => {
     let {peerId, consumerId} = req.body
-    if (!logic.checkExist(peerId)) {
+    let logic = getRoomByPeerId(peerId)
+    if (!logic) {
         res.send({error: 'offline'})
         return
     }
@@ -229,7 +283,8 @@ expressApp.post('/signaling/pause-consumer', async (req, res) => {
 // 重新唤醒消费   等于一个播放暂停/继续 按钮
 expressApp.post('/signaling/resume-consumer', async (req, res) => {
     let {peerId, consumerId} = req.body
-    if (!logic.checkExist(peerId)) {
+    let logic = getRoomByPeerId(peerId)
+    if (!logic) {
         res.send({error: 'offline'})
         return
     }
@@ -241,7 +296,8 @@ expressApp.post('/signaling/resume-consumer', async (req, res) => {
 // 关闭消费者
 expressApp.post('/signaling/close-consumer', async (req, res) => {
     let {peerId, consumerId} = req.body
-    if (!logic.checkExist(peerId)) {
+    let logic = getRoomByPeerId(peerId)
+    if (!logic) {
         res.send({error: 'offline'})
         return
     }
@@ -253,7 +309,8 @@ expressApp.post('/signaling/close-consumer', async (req, res) => {
 // 生产者暂停
 expressApp.post('/signaling/pause-producer', async (req, res) => {
     let {peerId, producerId} = req.body
-    if (!logic.checkExist(peerId)) {
+    let logic = getRoomByPeerId(peerId)
+    if (!logic) {
         res.send({error: 'offline'})
         return
     }
@@ -265,7 +322,8 @@ expressApp.post('/signaling/pause-producer', async (req, res) => {
 // 生产者唤醒
 expressApp.post('/signaling/resume-producer', async (req, res) => {
     let {peerId, producerId} = req.body
-    if (!logic.checkExist(peerId)) {
+    let logic = getRoomByPeerId(peerId)
+    if (!logic) {
         res.send({error: 'offline'})
         return
     }

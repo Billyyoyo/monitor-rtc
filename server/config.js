@@ -13,7 +13,7 @@ module.exports = {
     mediasoup: {
         worker: {
             rtcMinPort: 40000,
-            rtcMaxPort: 49999,
+            rtcMaxPort: 50000,
             logLevel: 'debug',
             logTags: [
                 'info',

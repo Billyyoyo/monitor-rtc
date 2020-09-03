@@ -92,7 +92,7 @@ async function onConnected({members}) {
     if (context.members) {
         context.members.forEach(member => callbacks.memberJoin(member))
     }
-    startRtc()
+    // startRtc()
 }
 
 async function onErrorOrClose(tip) {

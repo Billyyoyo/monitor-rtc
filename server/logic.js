@@ -11,7 +11,9 @@ const warn = debugModule('App:WARN');
 const err = debugModule('App:ERROR');
 
 module.exports = class Logic {
-    constructor() {
+    constructor(id, router) {
+        this.id = id
+        this.router = router
         this.peers = {} // 所有客户端
         this.transports = {} // 所有传输通道
         this.producers = [] // 分享视频或音频流的生产者
@@ -21,13 +23,9 @@ module.exports = class Logic {
         })
     }
 
-    setRouter(router) {
-        this.router = router
-    }
-
-    onConnected(ws, userId, peerId) {
+    async onConnected(ws, userId, peerId) {
         // todo 根据peerId获取用户信息，需要重构为db方式
-        let user = getUserById(userId);
+        let user = await getUserById(userId);
         if (!user) {
             ws.close();
             return;
@@ -170,7 +168,7 @@ module.exports = class Logic {
         })
     }
 
-    async handleFetchCapabilities(){
+    async handleFetchCapabilities() {
         return this.router.rtpCapabilities
     }
 
@@ -679,6 +677,14 @@ module.exports = class Logic {
 
     checkExist(peerId) {
         return this.peers.hasOwnProperty(peerId)
+    }
+
+    release() {
+        for (let peerId in this.peers) {
+            let peer = this.peers[peerId]
+            this._kickoff(peer)
+        }
+        this.router.close()
     }
 
 }
