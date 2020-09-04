@@ -1,10 +1,12 @@
 // Class to handle child process used for running FFmpeg
-
+const debugModule = require('debug')
 const child_process = require('child_process');
 const { EventEmitter } = require('events');
 
 const { createSdpText } = require('./sdp');
 const { convertStringToStream } = require('./utils');
+
+const log = require('./logger').getLogger('ffmpeg')
 
 const RECORD_FILE_LOCATION_PATH = process.env.RECORD_FILE_LOCATION_PATH || './files';
 
@@ -20,7 +22,7 @@ module.exports = class FFmpeg {
     const sdpString = createSdpText(this._rtpParameters);
     const sdpStream = convertStringToStream(sdpString);
 
-    console.log('createProcess() [sdpString:%s]', sdpString);
+    log.info('createProcess() [sdpString:%s]', sdpString);
 
     this._process = child_process.spawn('/home/billyyoyo/sdk/ffmpeg/bin/bin/ffmpeg', this._commandArgs);
 
@@ -28,7 +30,7 @@ module.exports = class FFmpeg {
       this._process.stderr.setEncoding('utf-8');
 
       this._process.stderr.on('data', data =>
-        console.log('ffmpeg::process::data [data:%o]', data)
+        log.debug(`process::data [data:${data}]`)
       );
     }
 
@@ -36,25 +38,25 @@ module.exports = class FFmpeg {
       this._process.stdout.setEncoding('utf-8');
 
       this._process.stdout.on('data', data => 
-        console.log('ffmpeg::process::data [data:%o]', data)
+        log.debug(`process::data [data:${data}]`)
       );
     }
 
     this._process.on('message', message =>
-      console.log('ffmpeg::process::message [message:%o]', message)
+      log.debug(`process::message [message:${message}]`)
     );
 
     this._process.on('error', error =>
-      console.error('ffmpeg::process::error [error:%o]', error)
+      log.error(`process::error [error:${error}]`)
     );
 
     this._process.once('close', () => {
-      console.log('ffmpeg::process::close');
+      log.info('process::close');
       this._observer.emit('process-close');
     });
 
     sdpStream.on('error', error =>
-      console.error('sdpStream::error [error:%o]', error)
+      log.error(`sdpStream::error [error:${error}]`)
     );
 
     // Pipe sdp stream to the ffmpeg process
@@ -63,7 +65,7 @@ module.exports = class FFmpeg {
   }
 
   kill () {
-    console.log('kill() [pid:%d]', this._process.pid);
+    log.info(`kill() [pid:${this._process.pid}]`);
     this._process.kill('SIGINT');
   }
 
@@ -90,7 +92,7 @@ module.exports = class FFmpeg {
       `${RECORD_FILE_LOCATION_PATH}/${this._rtpParameters.fileName}.webm`
     ]);
 
-    console.log('commandArgs:%o', commandArgs);
+    log.info(`commandArgs:${commandArgs}`);
 
     return commandArgs;
   }

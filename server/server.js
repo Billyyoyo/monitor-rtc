@@ -8,6 +8,8 @@ const fs = require('fs')
 const os = require('os')
 const Logic = require('./logic')
 const Action = require('./constants')
+const expressLogger = require('./logger').getExpressLogger()
+const log = require('./logger').getLogger('logic')
 const {getUserBySiteNo, getUserById, getRooms} = require('./dao')
 
 // 多cpu核心负载均衡工作单元
@@ -18,11 +20,8 @@ let logics = []
 
 // http服务
 let expressApp = express()
+expressApp.use(expressLogger)
 let httpsServer
-
-const log = debugModule('App')
-const warn = debugModule('App:WARN')
-const err = debugModule('App:ERROR')
 
 // http静态资源目录
 expressApp.use(express.static(__dirname))
@@ -61,7 +60,7 @@ async function initWorkers() {
         worker.appData.balance = 0
         // 工作进程结束将结束主进程
         worker.on('died', () => {
-            err('mediasoup worker died (this should never happen)')
+            log.error('mediasoup worker died (this should never happen)')
             process.exit(1)
         })
         workers.push(worker)
@@ -80,18 +79,18 @@ async function createRooms() {
         worker.appData.balance++
         let logic = new Logic(room.id, router)
         logics.push(logic)
-        log('create room: ' + room.id + ' name:' + room.name + ' in worker: ' + worker.pid + ' balance: ' + worker.appData.balance)
+        log.info('create room: ' + room.id + ' name:' + room.name + ' in worker: ' + worker.pid + ' balance: ' + worker.appData.balance)
     }
 }
 
 async function main() {
     // start mediasoup
-    log('starting rtc workers')
+    log.info('starting rtc workers')
     await initWorkers()
     await createRooms()
 
     // start https server, falling back to http if https fails
-    log('starting express')
+    log.info('starting express')
     try {
         const tls = {
             cert: fs.readFileSync(config.sslCrt),
@@ -99,35 +98,47 @@ async function main() {
         }
         httpsServer = https.createServer(tls, expressApp)
         let wsServer = expressWs(expressApp, httpsServer).app
-        wsServer.ws('/sock/:userId/:peerId', function (ws, req) {
+        wsServer.ws('/sock/:userId/:peerId', async function (ws, req) {
             ws.on('message', function (msg) {
                 dispatchWsMsg(ws, ws.peerId, msg)
             })
             ws.on('close', function (ev) {
-                getRoomByPeerId(ws.peerId).onDisconnected(ws, ws.peerId)
+                if (ws.peerId) {
+                    let logic = getRoomByPeerId(ws.peerId)
+                    if (logic) {
+                        logic.onDisconnected(ws, ws.peerId)
+                    }
+                }
             })
+            // 客户端建立连接
+            let user = await getUserById(req.params.userId)
+            if (!user) {
+                ws.close()
+                return
+            }
             ws.peerId = req.params.peerId
-            let user = getUserById(req.params.userId)
-            let logic = logics.find(l => l.roomId === user.roomId)
+            let logic = logics.find(l => l.id === user.roomId)
             if (logic) {
-                logic.onConnected(ws, req.params.userId, req.params.peerId)
+                log.info(`user: ${user.name} connect to logic room ${logic.id}`)
+                logic.onConnected(ws, user, req.params.peerId).then(r => {
+                })
             } else {
                 ws.close()
             }
         })
         httpsServer.on('error', (e) => {
-            err('https server error,', e.message)
+            log.error('https server error,', e.message)
         })
         await new Promise((resolve) => {
             httpsServer.listen(config.httpPort, config.httpIp, () => {
-                log(`server is running and listening on ` +
+                log.info(`server is running and listening on ` +
                     `https://${config.httpIp}:${config.httpPort}`)
                 resolve()
             })
         })
     } catch (e) {
         // https启动失败将启动http服务
-        err('server start up failed: ' + JSON.stringify(e))
+        log.error('server start up failed: ' + JSON.stringify(e))
         process.kill(1)
     }
 
@@ -139,6 +150,11 @@ expressApp.use(express.json({type: '*/*'}))
 
 function dispatchWsMsg(ws, peerId, msg) {
     const obj = JSON.parse(msg)
+    let logic = getRoomByPeerId(ws.peerId)
+    if (!logic) {
+        ws.send({error: 'no room'})
+        return
+    }
     if (obj.act === Action.HEARTBEAT) { // 心跳检测
         getRoomByPeerId(peerId).onHeartBeat(ws, peerId)
     } else if (obj.act === Action.MESSAGE) {

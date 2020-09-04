@@ -4,11 +4,7 @@ const debugModule = require('debug');
 const FFmpeg = require('./ffmpeg')
 const {getClientAddress} = require('./utils');
 const Action = require('./constants')
-const {getUserById} = require('./dao')
-
-const log = debugModule('App');
-const warn = debugModule('App:WARN');
-const err = debugModule('App:ERROR');
+const log = require('./logger').getLogger('logic')
 
 module.exports = class Logic {
     constructor(id, router) {
@@ -19,25 +15,18 @@ module.exports = class Logic {
         this.producers = [] // 分享视频或音频流的生产者
         this.consumers = []   // 订阅流的消费端
         this.ports = [] // 所有已使用端口
-        this._loop().then(r => {
-        })
+        this._looper = this._loop()
     }
 
-    async onConnected(ws, userId, peerId) {
-        // todo 根据peerId获取用户信息，需要重构为db方式
-        let user = await getUserById(userId);
-        if (!user) {
-            ws.close();
-            return;
-        }
+    async onConnected(ws, user, peerId) {
         Object.entries(this.peers).forEach(([id, p]) => {
-            if (p.userId === userId) {
-                warn(`kick off uid: ${p.userId}, pid: ${id}`);
+            if (p.userId === user.id) {
+                log.info(`kick off uid: ${p.userId}, pid: ${id}`);
                 if (p.conn) {
                     try {
                         p.conn.close()
                     } catch (e) {
-                        err(e)
+                        log.error(`close websocket failed: ${e}`)
                         this._kickoff(p).then(r => {
                         })
                     }
@@ -47,11 +36,11 @@ module.exports = class Logic {
                 }
             }
         });
-        log('peerId: ' + peerId + ' connected to server')
+        log.info('peerId: ' + peerId + ' connected to server')
         const now = Date.now();
         this.peers[peerId] = {
             id: peerId,
-            userId: userId,
+            userId: user.id,
             roomId: user.roomId,
             name: user.name,
             admin: user.isAdmin,
@@ -64,7 +53,7 @@ module.exports = class Logic {
             conn: ws,
         };
         // 客户端返回房间其他客户端
-        let members = this._getMembersInRoom(user.roomId)
+        let members = this._getMembers()
         members = members.map(m => {
             return {
                 id: m.id,
@@ -85,13 +74,13 @@ module.exports = class Logic {
     }
 
     onDisconnected(ws, peerId) {
-        log('peerId: ' + peerId + ' disconnected')
+        log.info('peerId: ' + peerId + ' disconnected')
         this._notifyLeave(peerId)
         let peer = this.peers[peerId]
         if (peer) {
             peer.conn = null
             if (peer) {
-                this._kickoff(peerId).then(r => {
+                this._kickoff(peer).then(r => {
                 })
             }
         }
@@ -107,10 +96,10 @@ module.exports = class Logic {
     async _kickoff(peer) {
         try {
             if (!peer) return
-            log('kickoff', peer.id);
+            log.info('kickoff', peer.id);
             // 踢出连接端信息
             // 找到所有跟该连接端关联的传输组件
-            log('closing peer', peer.id);
+            log.info('closing peer', peer.id);
             this._stopRecord(peer.id);
             for (let [id, transport] of Object.entries(this.transports)) {
                 // 从房间中删除
@@ -121,7 +110,7 @@ module.exports = class Logic {
             }
             delete this.peers[peer.id];
         } catch (e) {
-            console.error('error in /signaling/leave', e);
+            log.error(`error in /signaling/leave, ${e}`);
         }
     }
 
@@ -133,7 +122,7 @@ module.exports = class Logic {
         // 持久化后得到一个新的msg，将发送标识seq放入新msg后返回给客户端
         // 消息持久化后可以返回用户一个发送成功回执
         this._sendMsg(ws, Action.SUCCESS, msg.seq)
-        this._broadcastMessage(peer.roomId, Action.MESSAGE, msg, peerId).then(r => {
+        this._broadcastMessage(Action.MESSAGE, msg, peerId).then(r => {
         })
     }
 
@@ -148,12 +137,13 @@ module.exports = class Logic {
             media: peer.media,
             stats: peer.stats
         }
-        this._broadcastMessage(peer.roomId, Action.JOIN, {member: member}, peer.id)
+        this._broadcastMessage(Action.JOIN, {member: member}, peer.id)
     }
 
     // 通知其他客户端有人离开
-    _notifyLeave(peer) {
-        this._broadcastMessage(peer.roomId, Action.LEAVE, {peerId: peer.id}, peer.id).then(r => {
+    _notifyLeave(peerId) {
+        const p = {peerId: peerId}
+        this._broadcastMessage(Action.LEAVE, p, peerId).then(r => {
         })
     }
 
@@ -161,7 +151,7 @@ module.exports = class Logic {
     async _notifyMediaBegin(peerId, mediaTag, mediaInfo) {
         let peer = this.peers[peerId]
         // 不管任何媒体流（摄像头、屏幕、麦克风）准备就绪，都通知房间所有人，由客户端决定订阅
-        this._broadcastMessage(peer.roomId, Action.READY, {
+        this._broadcastMessage(Action.READY, {
             peerId: peerId,
             mediaTag: mediaTag,
             mediaInfo: mediaInfo
@@ -174,7 +164,7 @@ module.exports = class Logic {
 
     async handleCreateTransport(peerId, direction) {
         try {
-            log('create-transport', peerId, direction);
+            log.info('create-transport', peerId, direction);
             // 创建传输对象
             let transport = await this._createWebRtcTransport({peerId, direction});
             // 将传输对象加入列表
@@ -185,7 +175,7 @@ module.exports = class Logic {
                 transportOptions: {id, iceParameters, iceCandidates, dtlsParameters}
             };
         } catch (e) {
-            console.error('error in /signaling/create-transport', e);
+            log.error(`error in /signaling/create-transport ${e}`);
             return {error: e};
         }
     }
@@ -195,15 +185,15 @@ module.exports = class Logic {
             let transport = this.transports[transportId];
             // 如果该传输id没在服务端注册，返回错误
             if (!transport) {
-                err(`connect-transport: server-side transport ${transportId} not found`);
+                log.error(`connect-transport: server-side transport ${transportId} not found`);
                 return {error: `server-side transport ${transportId} not found`};
             }
-            log('connect-transport', peerId, transport.appData);
+            log.info('connect-transport', peerId, transport.appData);
             // dtls其实就是UDP连接信息，tls加持  这里开始进行udp连接  同时返回客户端连接建立成功
             await transport.connect({dtlsParameters});
             return {connected: true};
         } catch (e) {
-            console.error('error in /signaling/connect-transport', e);
+            log.error(`error in /signaling/connect-transport ${e}`);
             return {error: e};
         }
     }
@@ -213,16 +203,16 @@ module.exports = class Logic {
             let transport = this.transports[transportId];
 
             if (!transport) {
-                err(`close-transport: server-side transport ${transportId} not found`);
+                log.error(`close-transport: server-side transport ${transportId} not found`);
                 return {error: `server-side transport ${transportId} not found`};
             }
 
-            log('close-transport', peerId, transport.appData);
+            log.info(`close-transport id: ${peerId} data: ${transport.appData}`);
             // 注销传输对象
             await this._closeTransport(transport);
             return {closed: true};
         } catch (e) {
-            console.error('error in /signaling/close-transport', e);
+            log.error(`error in /signaling/close-transport ${e}`);
             return {error: e.message};
         }
     }
@@ -231,15 +221,15 @@ module.exports = class Logic {
         try {
             let producer = this.producers.find((p) => p.id === producerId);
             if (!producer) {
-                err(`resume-producer: server-side producer ${producerId} not found`);
+                log.error(`resume-producer: server-side producer ${producerId} not found`);
                 return {error: `server-side producer ${producerId} not found`};
             }
-            log('resume-producer', producer.appData);
+            log.info(`resume-producer id: ${peerId}, data: ${producer.appData}`);
             await producer.resume();
             this.peers[peerId].media[producer.appData.mediaTag].paused = false;
             return {resumed: true};
         } catch (e) {
-            console.error('error in /signaling/resume-producer', e);
+            log.error(`error in /signaling/resume-producer ${e}`);
             return {error: e};
         }
     }
@@ -248,15 +238,15 @@ module.exports = class Logic {
         try {
             let producer = this.producers.find((p) => p.id === producerId);
             if (!producer) {
-                err(`pause-producer: server-side producer ${producerId} not found`);
+                log.error(`pause-producer: server-side producer ${producerId} not found`);
                 return {error: `server-side producer ${producerId} not found`};
             }
-            log('pause-producer', producer.appData);
+            log.info(`pause-producer id: ${peerId} data: ${producer.appData}`);
             await producer.pause();
             this.peers[peerId].media[producer.appData.mediaTag].paused = true;
             return {paused: true};
         } catch (e) {
-            console.error('error in /signaling/pause-producer', e);
+            log.error(`error in /signaling/pause-producer ${e}`);
             return {error: e};
         }
     }
@@ -265,14 +255,14 @@ module.exports = class Logic {
         try {
             let producer = this.producers.find((p) => p.id === producerId);
             if (!producer) {
-                err(`close-producer: server-side producer ${producerId} not found`);
+                log.error(`close-producer: server-side producer ${producerId} not found`);
                 return {error: `server-side producer ${producerId} not found`};
             }
-            log('close-producer', peerId, producer.appData);
+            log.info('close-producer', peerId, producer.appData);
             await this._closeProducer(producer);
             return {closed: true};
         } catch (e) {
-            console.error(e);
+            log.error(`handleCloseProducer exception: ${e}`);
             return {error: e.message};
         }
     }
@@ -282,7 +272,7 @@ module.exports = class Logic {
             let transport = this.transports[transportId];
 
             if (!transport) {
-                err(`send-track: server-side transport ${transportId} not found`);
+                log.error(`send-track: server-side transport ${transportId} not found`);
                 return {error: `server-side transport ${transportId} not found`};
             }
 
@@ -296,7 +286,7 @@ module.exports = class Logic {
 
             // 当传输对象关闭时 关闭生产者
             producer.on('transportclose', () => {
-                log('producer\'s transport closed', producer.id);
+                log.info(`producer\'s transport closed ${producer.id}`);
                 this._closeProducer(producer);
             });
 
@@ -328,7 +318,7 @@ module.exports = class Logic {
             // 返回生产者的id
             return {id: producer.id};
         } catch (e) {
-            console.error(e);
+            log.error(`handleSendTrack exception: ${e}`);
             return {error: e.message};
         }
     }
@@ -344,14 +334,14 @@ module.exports = class Logic {
             if (!producer) {
                 let msg = 'server-side producer for ' +
                     `${mediaPeerId}:${mediaTag} not found`;
-                err('recv-track: ' + msg);
+                log.error('recv-track: ' + msg);
                 return {error: msg};
             }
 
             // 判断是否能对生产者进行订阅  否则返回错误
             if (!this.router.canConsume({producerId: producer.id, rtpCapabilities})) {
                 let msg = `client cannot consume ${mediaPeerId}:${mediaTag}`;
-                err(`recv-track: ${peerId} ${msg}`);
+                log.error(`recv-track: ${peerId} ${msg}`);
                 return {error: msg};
             }
 
@@ -363,7 +353,7 @@ module.exports = class Logic {
             // 不能跳过创建传输这个流程
             if (!transport) {
                 let msg = `server-side recv transport for ${peerId} not found`;
-                err('recv-track: ' + msg);
+                log.error('recv-track: ' + msg);
                 return {error: msg};
             }
 
@@ -394,7 +384,7 @@ module.exports = class Logic {
                 producerPaused: consumer.producerPaused
             };
         } catch (e) {
-            console.error('error in /signaling/recv-track', e);
+            log.error(`error in /signaling/recv-track ${e}`);
             return {error: e};
         }
     }
@@ -403,14 +393,14 @@ module.exports = class Logic {
         try {
             let consumer = this.consumers.find((c) => c.id === consumerId);
             if (!consumer) {
-                err(`pause-consumer: server-side consumer ${consumerId} not found`);
+                log.error(`pause-consumer: server-side consumer ${consumerId} not found`);
                 return {error: `server-side consumer ${consumerId} not found`};
             }
-            log('resume-consumer', consumer.appData);
+            log.info('resume-consumer', consumer.appData);
             await consumer.resume();
             return {resumed: true};
         } catch (e) {
-            console.error('error in /signaling/resume-consumer', e);
+            log.error(`error in /signaling/resume-consumer ${e}`);
             return {error: e};
         }
     }
@@ -419,14 +409,14 @@ module.exports = class Logic {
         try {
             let consumer = this.consumers.find((c) => c.id === consumerId);
             if (!consumer) {
-                err(`close-consumer: server-side consumer ${consumerId} not found`);
+                log.error(`close-consumer: server-side consumer ${consumerId} not found`);
                 return {error: `server-side consumer ${consumerId} not found`};
             }
             // 注销消费者
             await this._closeConsumer(consumer);
             return {closed: true};
         } catch (e) {
-            console.error('error in /signaling/close-consumer', e);
+            log.error(`error in /signaling/close-consumer ${e}`);
             return {error: e};
         }
     }
@@ -435,35 +425,35 @@ module.exports = class Logic {
         try {
             let consumer = this.consumers.find((c) => c.id === consumerId);
             if (!consumer) {
-                err(`pause-consumer: server-side consumer ${consumerId} not found`);
+                log.error(`pause-consumer: server-side consumer ${consumerId} not found`);
                 return {error: `server-side producer ${consumerId} not found`};
             }
 
-            log('pause-consumer', consumer.appData);
+            log.info(`pause-consumer id: ${peerId}, data: ${consumer.appData}`);
             // 居然还能暂停   什么鬼    为了保持消费状态吗？
             await consumer.pause();
 
             return {paused: true};
         } catch (e) {
-            console.error('error in /signaling/pause-consumer', e);
+            log.error(`error in /signaling/pause-consumer ${e}`);
             return {error: e};
         }
     }
 
     // 每3秒更新视频播放状态 比如视频参数等
-    async _loop() {
+    _loop() {
         // 每隔一秒执行检查房间所有连接的同步状态，如果同步时间超时15秒将其关闭
-        setInterval(async () => {
+        return setInterval(async () => {
             // 遍历所有连接客户端
             let now = Date.now();
             Object.entries(this.peers).forEach(([id, p]) => {
                 if ((now - p.lastSeenTs) > config.httpPeerStale) {
-                    warn(`removing stale peer ${id}`);
+                    log.warn(`removing stale peer ${id}`);
                     if (p.conn) {
                         try {
                             p.conn.close()
                         } catch (e) {
-                            err(e)
+                            log.error(`close websocket in loop exception ${e}`)
                             this._kickoff(p)
                         }
                     } else {
@@ -477,17 +467,17 @@ module.exports = class Logic {
     // 生产者和消费者依靠transport传输组件关联起来的  所以关闭连接的时候必须关闭这个组件
     async _closeTransport(transport) {
         try {
-            log('closing transport', transport.id, transport.appData);
+            log.info('closing transport', transport.id, transport.appData);
             await transport.close();
             delete this.transports[transport.id];
         } catch (e) {
-            err(e);
+            log.error(`closeTransport exception: ${e}`)
         }
     }
 
     // 关闭生产者
     async _closeProducer(producer) {
-        log('closing producer', producer.id, producer.appData);
+        log.info('closing producer', producer.id, producer.appData);
         try {
             await producer.close();
             // 从生产者列表中删除
@@ -499,13 +489,13 @@ module.exports = class Logic {
                     .media[producer.appData.mediaTag]);
             }
         } catch (e) {
-            err(e);
+            log.error(`closeProducer exception: ${e}`)
         }
     }
 
 // 关闭消费者
     async _closeConsumer(consumer) {
-        log('closing consumer', consumer.id, consumer.appData);
+        log.info('closing consumer', consumer.id, consumer.appData);
         await consumer.close();
         // 从消费者列表中删除
         this.consumers = this.consumers.filter((c) => c.id !== consumer.id);
@@ -597,12 +587,12 @@ module.exports = class Logic {
 
     _onConsumerEvent(peerId, consumer) {
         consumer.on('transportclose', () => {
-            log(`consumer's transport closed`, consumer.id);
+            log.info(`consumer's transport closed`, consumer.id);
             this._closeConsumer(consumer).then(r => {
             });
         });
         consumer.on('producerclose', () => {
-            log(`consumer's producer closed`, consumer.id);
+            log.info(`consumer's producer closed`, consumer.id);
             this._closeConsumer(consumer).then(r => {
             });
         });
@@ -622,7 +612,6 @@ module.exports = class Logic {
             let peer = this.peers[peerId]
             let videoProducer = this._getProducerById(videoProducerId)
             let audioProducer = this._getProducerById(audioProducerId)
-            // let transport = this.transports[transportId]
             let recordInfo = {};
 
             recordInfo['video'] = await this._createPlainRtcTransport(videoProducer);
@@ -655,18 +644,15 @@ module.exports = class Logic {
         ws.send(JSON.stringify(action))
     }
 
-    _getMembersInRoom(roomId) {
-        let members = []
-        Object.entries(this.peers).forEach(([id, p]) => {
-            if (p.roomId === roomId) {
-                members.push(p)
-            }
+    _getMembers() {
+        let members = Object.entries(this.peers).map(([id, p]) => {
+            return p
         })
         return members
     }
 
-    async _broadcastMessage(roomId, act, data, excluded) {
-        this._getMembersInRoom(roomId)
+    async _broadcastMessage(act, data, excluded) {
+        this._getMembers()
             .forEach(m => {
                 excluded = excluded || '-';
                 if (m.id !== excluded) {
@@ -680,6 +666,10 @@ module.exports = class Logic {
     }
 
     release() {
+        if (this._looper) {
+            clearInterval(this._looper)
+            this._looper = null
+        }
         for (let peerId in this.peers) {
             let peer = this.peers[peerId]
             this._kickoff(peer)

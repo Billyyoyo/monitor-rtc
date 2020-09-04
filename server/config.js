@@ -1,12 +1,8 @@
 module.exports = {
-    // http server ip, port, and peer timeout constant
-    //
     httpIp: '0.0.0.0',
     httpPort: 3000,
     httpPeerStale: 15000,
 
-    // ssl certs. we'll start as http instead of https if we don't have
-    // these
     sslCrt: './cert/localhost.crt',
     sslKey: './cert/localhost.key',
 
@@ -73,16 +69,12 @@ module.exports = {
                     }
                 ]
         },
-
-        // rtp listenIps are the most important thing, below. you'll need
-        // to set these appropriately for your network for the demo to
-        // run anywhere but on localhost
         webRtcTransport: {
             listenIps: [
                 // { ip: '127.0.0.1', announcedIp: null },
                 // { ip: '192.168.1.113', announcedIp: null },
                 // { ip: '192.168.0.109', announcedIp: null },
-                { ip: '10.8.240.133', announcedIp: null},
+                {ip: '10.8.240.133', announcedIp: null},
             ],
             initialAvailableOutgoingBitrate: 800000,
         },
@@ -90,6 +82,52 @@ module.exports = {
             listenIp: '127.0.0.1',
             rtcpMux: true,
             comedia: false
+        }
+    },
+    log: {
+        appenders: {
+            console: {
+                type: 'console'
+            },
+            access: {
+                type: 'dateFile',
+                filename: 'logs/access',
+                pattern: "-yyyy-MM-dd.txt",
+                compress: true,
+                daysToKeep: 2,
+            },
+            logic: {
+                type: 'dateFile',
+                filename: 'logs/logic',
+                pattern: "-yyyy-MM-dd.txt",
+                compress: true,
+                daysToKeep: 2,
+            },
+            ffmpeg: {
+                type: 'dateFile',
+                filename: 'logs/ffmpeg',
+                pattern: "-yyyy-MM-dd.txt",
+                compress: true,
+                daysToKeep: 2,
+            }
+        },
+        categories: {
+            default: {
+                appenders: ['console'],
+                level: 'debug'
+            },
+            access: {
+                appenders: ['console', 'access'],
+                level: ['info']
+            },
+            logic: {
+                appenders: ['console', 'logic'],
+                level: ['info']
+            },
+            ffmpeg: {
+                appenders: ['console', 'ffmpeg'],
+                level: ['info']
+            }
         }
     }
 };

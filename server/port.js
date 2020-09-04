@@ -1,4 +1,7 @@
 // Port used for the gstreamer process to receive RTP from mediasoup 
+const debugModule = require('debug')
+
+const err = debugModule('app:ERROR')
 
 const MIN_PORT = 50000;
 const MAX_PORT = 59999;
@@ -16,7 +19,7 @@ module.exports.getPort = async () => {
       // Check that the port is available to use
       await isPortOpen(port);
     } catch (error) {
-      console.error('getPort() port is taken [port:%d]', port);
+      err(`getPort() port is taken [port:${port}]`);
       takenPortSet.add(port);
     }
   }
